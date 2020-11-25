@@ -16,9 +16,11 @@ $y = \alpha + \beta1*x1 + \beta2*x2 + \beta3*x3 + \beta4*x4$
 
 If we want to make inferences about the effect x1 and x2 have on y, we need to create a linear combination of those variables
 
-$y_{lc} = \beta1*x1 + \beta2*x2$
+$y_{lc} = exp(\alpha + \beta1*x1 + \beta2*x2)$
 
-Of course just an estimate by itself doesn't tell us much, so we need to calculate standard errors, confidence intervals and p-values to know whether the effect is positive or negative and statistically significant.
+Of course just an estimate by itself doesn't tell us much, so we need to calculate standard errors, confidence intervals and p-values to know whether the effect is positive or negative and statistically significant. We can interpret the difference $exp(lc1) - exp(lc2)$ as the difference in expected value of the response variable (suicide count in this case), where $lc1$ and $lc2$ are linear combinations of the predictor variables
+
+Similarly, we can interpret the **nonlinear combination** of regression coefficients, $exp(int + x1/x2)$ as the ratio of the expected value of the response variable, where $x1$ and $x2$ are predictor variables and $int$ is the intercept term.
 
 ## **Why is it useful?**
 
@@ -35,6 +37,9 @@ We will be looking at the effect of:
 
 and draw inferences based on the estimates, confidence intervals and p-values obtained for each pair.
 
+# **Outline** 
+
+This project mainly includes exploratory data analysis, model fitting, linear and nonlinear combination investigation using three statistical analysis tools: R, Python and Stata. The results are also visualized by the corresponding packages in these tools. 
 
 ## **Data Description**
 In this tutorial, we use the [1985-2016 Suicide Rates Overview Data](https://www.kaggle.com/russellyates88/suicide-rates-overview-1985-to-2016) which can be download from [Kaggle](https://www.kaggle.com). It is a compiled dataset pulled from four other datasets linked by time and place. It has 27820 records in total. The target variables we are going to analyze are:
@@ -77,13 +82,22 @@ To fit a Poisson regression model, we use the glm function in R. We use `log(pop
 
 While R has an `esticon` function in the `doBy` package that calculates estimates, standard errors, confidence intervals and p-values for the desired linear combination, we did them by hand (and verified them using `esticon`). The vcov() function came in handy to store the variance-covariance matrix of the regression model.
 
-To plot confidence intervals we used the ggplot package and plotted horizontal error bars for each pair of linear combinations.
+For non-linear combinations, we used the msm package's deltamethod function to compute standard errors.
+
+To plot confidence intervals we used the ggplot package and plotted horizontal error bars for each pair of linear and non-linear combinations.
 
 ### **Python**
 
-Similarly, we use the glm function is Python statsmodels to fit the Poisson regression model.
+Similarly, we use the glm function in Python statsmodels to fit the Poisson regression model. The parameter estimates along with the confidence interval are obtained by retrieving the paramter array and covariance matrix from the fitted model. The results are visualized by matplotlib.pyplot.
 
 ### **Stata**
+
+We can fit the Poisson regression using `poisson` in Stata and use option 
+`offset` to set an offset or use `exposure` which is equivalent to adding 
+`offset(log_var)`. To get the estimated linear combination of coefficients, we can use `lincom`. It will output the point estimates, standard errors, t or z statistics, p-values, and confidence intervals.
+Or simply set the linear combination to the reference level and get the
+reults from the output of `poisson` function.Similarly, we can use `nlcom` 
+to get the results for non-linear combination of coefficients.
 
 # **Core Analysis** {.tabset .tabset-pills}
 
@@ -96,7 +110,7 @@ Similarly, we use the glm function is Python statsmodels to fit the Poisson regr
 
 
 # Construct the confidence interval figures
-source('core_example.R')
+source('R/core_example.R')
 
       ## Create plots for each of the pairs of combinations ##
 
@@ -123,30 +137,191 @@ df3 = create_dataframe(male_75_2015, male_5_14_2015,
 
 plot_ci(dataset=df3)
 
+
+
+
+## Create the non-linear combination plot ##
+
+plot_ci(dataset=full_df, xlab = "NLC CI", ylab = "NLC groups",
+        title="Non-linear Combination (NLC) CI's")
+
 ```
 
 
 
 ## Stata
+### Data Cleaning
+
+First we will get the data from url and clean the data.
+```{stata, echo = TRUE, eval = FALSE}
+* download and save data
+local base_url ///
+https://raw.githubusercontent.com/aravind1338/506F20GroupProject/main
+import delimited `base_url'/master.csv, clear
+keep ïcountry year sex age suicides_no population gdp_for_year 
+
+* rename variables 
+rename (ïcountry suicides_no gdp_for_year) ///
+	   (country count gdp)
+
+* convert gender from str to binary 
+generate byte gender = 1 if sex == "male"
+replace gender = 0 if sex == "female"
+label define gender_label 0 "Female" 1 "Male" , replace
+label values gender gender_label
+
+* conveert gdp to numeric
+destring gdp, replace ignore(",")
+
+* convert age from string to categorical
+generate byte age_group=1 if age == "5-14 years"
+replace age_group = 2 if age == "15-24 years"
+replace age_group = 3 if age == "25-34 years"
+replace age_group = 4 if age == "35-54 years"
+replace age_group = 5 if age == "55-74 years"
+replace age_group = 6 if age == "75+ years"
+label define ag_label 1 "5-14 years" 2 "15-24 years" 3 "25-34 years" ///
+					  4 "35-54 years" 5 "55-74 years" 6 "75+ years"
+label values age_group ag_label
+
+* drop columns
+drop sex age
+
+* save data
+save cleaned.dta, replace
+use cleaned, clear 
+```
+
+We can have a look at the cleaned data:
+```{stata, echo = TRUE, eval = FALSE}
+list in 1/5
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/head.png?raw=true){width=400px}
+
+### Summary Table
+```{stata, echo = TRUE, eval = FALSE}
+tabstat count, by(gender) stats(mean sd n)
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/eda_gender.png?raw=true){width=400px}
+
+```{stata, echo = TRUE, eval = FALSE}
+tabstat count, by(age_group) stats(mean sd n)
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/eda_age.png?raw=true){width=400px}
+
+### Analysis
+
+We can use function `poisson` to fit a Poisson regression model. 
+Option `exposure(population)` means add log(population) as an offset. We can
+also use option `offset(log_population)`. Option `irr` means to present the regression results as incident rate ratios.
 
 
+#### Linear Commbination of Coefficient: example 1
 
+In this example, we are trying to figure out the linear combination of 25-34 
+years old males in 2015 and linear combination of 25-34 years old males in 2005.
+We can change the base level to these two linear combinations separately and
+get the estimated baseline incidence rate and its se as well as CI.
+
+To set the base level of poisson regression model, we only need to specify the 
+level between `ib` and `.var` in the poisson formula. For example, in the
+following example, I set the reference level of age group to be 25-34 which is 
+coded as 3 in the data, I specify it as `ib3.age_group` in the formula.
+
+```{stata, echo = TRUE, eval = FALSE}
+** 25-34 males in 2015 vs 25-34 males 2005;  different year
+** Get the point estimates and CIs for two combinations separatly 
+*** 25-34 males in 2015
+poisson count ib3.age_group ib1.gender ib2015.year gdp, exposure(population) irr
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/l1_2015.png?raw=true){width=450px}
+
+```{stata, echo = TRUE, eval = FALSE}
+*** 25-34 males in 2005
+poisson count ib3.age_group ib1.gender ib2005.year gdp, exposure(population) irr
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/l1_2005.png?raw=true){width=450px}
+
+`_cons` estimate the baseline incidence rate
+The default levle of confidence interval is 95%, and we don't specify it in our model. 
+
+
+#### Linear Combination of Coefficient: example 2
+
+In this example, we are trying to figure out the linear combination of 35-54 years-old males in 2015 and 35-54 years-old female in 2015.
+
+In default, the baseline level for gender is femle.
+```{stata, echo = TRUE, eval = FALSE}
+** 35-54 males in 2015 vs 35-54 females 2015; different gender
+** Get the point estimates and CIs for two combinations separatly 
+*** 35-54 females in 2015
+poisson count ib4.age_group i.gender ib2015.year gdp, exposure(population) irr
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/l2_female.png?raw=true){width=450px}
+
+```{stata, echo = TRUE, eval = FALSE}
+*** 35-54 males in 2015
+poisson count ib4.age_group ib1.gender ib2015.year gdp, exposure(population) irr
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/l2_male.png?raw=true){width=450px}
+
+
+#### Linear Commbination of Coefficient: example 3
+
+In this example, we are trying to figure out the linear combination of 75+ years-old males in 2015 and 5-14 years-old female in 2015.
+
+In default, the baseline level for gender is femle. So we don't need to specify 
+the reference level of gender.
+```{stata, echo = TRUE, eval = FALSE}
+** 75+ males in 2015 vs 5-14 males in 2015; different age
+** Get the point estimates and CIs for two combinations separatly 
+*** 75+ males in 2015 
+poisson count ib6.age_group ib1.gender ib2015.year gdp, exposure(population) irr
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/l2_female.png?raw=true){width=450px}
+
+```{stata, echo = TRUE, eval = FALSE}
+*** 5-14 males in 2015
+poisson count ib1.age_group ib1.gender ib2015.year gdp, exposure(population) irr
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/l2_male.png?raw=true){width=450px}
+
+
+#### Non-linear Combination of Coefficient:
+
+We may also curiouos about the non linear combinations such as products or ratio
+of two coefficients. We can use `nlcom` function. The notation `_b[name]` is the standard way in Stata to refer to regression coefficients. We can give the
+combination a name showing as below: I named this combination as `E_product` 
+followed by a comma and then the expression.
+
+```{stata nonlinear_1, echo = TRUE, eval = FALSE}
+** Coefficient estimates of male * year_2015
+poisson count ib2.age_group i.gender i.year gdp, exposure(population) irr
+nlcom (E_product: exp(_b[1.gender] * _b[2005.year] ))
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/n_1.png?raw=true){width=450px}
+
+
+```{stata nonlinear_2, echo = TRUE, eval = FALSE}
+** Coefficient estimates of year_2000/year_2010
+poisson count ib2.age_group i.gender i.year gdp, exposure(population) irr
+nlcom (E_ratio: exp(_b[2000.year] / _b[2010.year]))
+```
+
+![](https://github.com/aravind1338/506F20GroupProject/blob/main/STATA/Results/n_2.png?raw=true){width=450px}
 
 # **Conclusion/Discussion**
 
-TODO
-
-
-
-# **TODO**
-
-* We need to estimate non-linear combinations of coefficients, and add explanations of what those mean in the Introduction
-* We need to add a conclusion/discussion, comparing and contrasting the tools that were used.
-* **R:** make the CI plots better by adjusting x-ticks and perhaps adding colors
-
-
-
-
-
+**Add discussion of the results -- which group has a higher effect etc.**
 
 
